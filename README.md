@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Passerelle%20Modbus%20RTU%20vers%20TCP.png" alt="Modbus RTU to TCP Gateway" width="520" style="max-width: 100%; height: auto;" />
+</p>
+
 # Modbus RTU ↔ TCP Gateway for ESPHome
 
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
