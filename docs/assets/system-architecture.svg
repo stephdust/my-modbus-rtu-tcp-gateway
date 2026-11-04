@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later; Copyright (C) 2026 Modbus RTU-TCP Gateway contributors. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1120" viewBox="0 0 1600 1120" role="img" aria-labelledby="title desc">
   <title id="title">Modbus RTU to TCP Gateway — both operating modes</title>
-  <desc id="desc">Two diagrams show TCP Client with the gateway acting as an RTU slave, and TCP Server with the gateway acting as an RTU master.</desc>
+  <desc id="desc">Two bidirectional diagrams show TCP Client with the gateway acting as an RTU slave, and TCP Server with the gateway acting as an RTU master. Blue arrows are requests and green arrows are responses.</desc>
   <defs>
     <linearGradient id="gateway" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#102f52"/><stop offset="1" stop-color="#1769aa"/></linearGradient>
     <linearGradient id="network" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#e6f3fc"/><stop offset="1" stop-color="#d5eafa"/></linearGradient>
@@ -31,8 +31,11 @@
   <text x="250" y="365" text-anchor="middle" class="cardSub">PLC / controller</text>
   <text x="250" y="395" text-anchor="middle" class="cardSub">Initiates RTU requests</text>
 
-  <path d="M400 357 H590" class="flowGreen"/>
-  <text x="495" y="333" text-anchor="middle" class="small">RS-485 / Modbus RTU</text>
+  <text x="495" y="315" text-anchor="middle" class="small">RS-485 / Modbus RTU</text>
+  <path d="M400 352 H590" class="flowBlue"/>
+  <text x="495" y="342" text-anchor="middle" class="small">Request →</text>
+  <path d="M590 390 H400" class="flowGreen"/>
+  <text x="495" y="420" text-anchor="middle" class="small">← Response</text>
 
   <rect x="610" y="260" width="390" height="195" rx="22" fill="url(#gateway)" stroke="#0c4778" stroke-width="3"/>
   <text x="805" y="310" text-anchor="middle" class="gatewayTitle">ESP32-S3 Gateway</text>
@@ -40,8 +43,11 @@
   <rect x="660" y="370" width="290" height="55" rx="12" fill="#fff" opacity=".14" stroke="#9bd7ff"/>
   <text x="805" y="404" text-anchor="middle" class="role">RTU request → TCP request</text>
 
-  <path d="M1000 357 H1190" class="flowBlue"/>
-  <text x="1095" y="333" text-anchor="middle" class="small">Ethernet / Wi-Fi</text>
+  <text x="1095" y="315" text-anchor="middle" class="small">Ethernet / Wi-Fi</text>
+  <path d="M1000 352 H1190" class="flowBlue"/>
+  <text x="1095" y="342" text-anchor="middle" class="small">Request →</text>
+  <path d="M1190 390 H1000" class="flowGreen"/>
+  <text x="1095" y="420" text-anchor="middle" class="small">← Response</text>
 
   <rect x="1210" y="285" width="300" height="145" rx="18" fill="url(#network)" stroke="#6ba7d6" stroke-width="2"/>
   <text x="1360" y="333" text-anchor="middle" class="cardTitle">Modbus TCP Server</text>
@@ -53,18 +59,21 @@
   <!-- MODE 2 -->
   <rect x="50" y="585" width="1500" height="465" rx="24" fill="#fff" stroke="#bdd5e8" stroke-width="2"/>
   <text x="90" y="633" class="panelTitle">Mode 2 — TCP Server / RTU Master</text>
-  <text x="90" y="665" class="small">Up to four TCP masters can stay connected; the gateway initiates RTU requests to the slave devices.</text>
+  <text x="90" y="665" class="small">Up to four TCP clients (acting as Modbus TCP masters) can stay connected; the gateway communicates with RTU slave devices.</text>
 
   <g>
     <rect x="95" y="735" width="245" height="65" rx="13" fill="#f8fbff" stroke="#9fc5e5" stroke-width="2"/>
-    <text x="217" y="775" text-anchor="middle" class="cardTitle">TCP Master 1</text>
+    <text x="217" y="775" text-anchor="middle" class="cardTitle">TCP Client 1</text>
     <rect x="95" y="815" width="245" height="65" rx="13" fill="#f8fbff" stroke="#9fc5e5" stroke-width="2"/>
-    <text x="217" y="855" text-anchor="middle" class="cardTitle">TCP Master 2</text>
+    <text x="217" y="855" text-anchor="middle" class="cardTitle">TCP Client 2</text>
     <rect x="95" y="895" width="245" height="65" rx="13" fill="#f8fbff" stroke="#9fc5e5" stroke-width="2"/>
-    <text x="217" y="935" text-anchor="middle" class="cardTitle">TCP Master 3 / 4</text>
+    <text x="217" y="935" text-anchor="middle" class="cardTitle">TCP Client 3 / 4</text>
   </g>
-  <path d="M340 850 H470" class="flowBlue"/>
-  <text x="405" y="825" text-anchor="middle" class="small">TCP port 502</text>
+  <text x="415" y="812" text-anchor="middle" class="small">TCP port 502</text>
+  <path d="M340 844 H480" class="flowBlue"/>
+  <text x="410" y="835" text-anchor="middle" class="small">Request →</text>
+  <path d="M480 880 H340" class="flowGreen"/>
+  <text x="410" y="908" text-anchor="middle" class="small">← Response</text>
 
   <rect x="490" y="735" width="360" height="225" rx="22" fill="url(#gateway)" stroke="#0c4778" stroke-width="3"/>
   <text x="670" y="790" text-anchor="middle" class="gatewayTitle">ESP32-S3 Gateway</text>
@@ -73,8 +82,11 @@
   <text x="670" y="880" text-anchor="middle" class="role">4 TCP client slots</text>
   <text x="670" y="904" text-anchor="middle" class="role">One RTU transaction at a time</text>
 
-  <path d="M850 850 H1000" class="flowGreen"/>
-  <text x="925" y="825" text-anchor="middle" class="small">RS-485 / RTU</text>
+  <text x="935" y="812" text-anchor="middle" class="small">RS-485 / RTU</text>
+  <path d="M850 844 H1000" class="flowBlue"/>
+  <text x="925" y="835" text-anchor="middle" class="small">Request →</text>
+  <path d="M1000 880 H850" class="flowGreen"/>
+  <text x="925" y="908" text-anchor="middle" class="small">← Response</text>
 
   <rect x="1020" y="735" width="445" height="225" rx="20" fill="#e8f8ef" stroke="#73c293" stroke-width="2"/>
   <text x="1242" y="780" text-anchor="middle" class="cardTitle">Modbus RTU Slave devices</text>
@@ -85,5 +97,5 @@
   <text x="1342" y="858" text-anchor="middle" class="cardTitle">Slave 2…N</text>
   <text x="1342" y="884" text-anchor="middle" class="cardSub">Unique addresses</text>
 
-  <text x="800" y="1010" text-anchor="middle" class="small">TCP sessions are concurrent; requests share one half-duplex RS-485 bus and are processed sequentially.</text>
+  <text x="800" y="1010" text-anchor="middle" class="small">TCP sessions stay connected concurrently; requests and responses share one half-duplex RS-485 bus, one transaction at a time.</text>
 </svg>
