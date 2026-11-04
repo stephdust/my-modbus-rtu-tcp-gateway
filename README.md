@@ -14,7 +14,7 @@ A Wi-Fi Modbus gateway built with **ESPHome**, **ESP32-S3** and the **Arduino fr
 
 - **Two operating modes**
   - **TCP Client / RTU Slave:** an external RTU master polls the ESP32; the gateway forwards each request to a configured remote Modbus TCP server.
-  - **TCP Server / RTU Master:** Modbus TCP masters connect to the ESP32; the gateway forwards their requests to downstream RTU slave devices.
+  - **TCP Server / RTU Master:** Modbus TCP Clients connect to the ESP32; the gateway forwards their requests to downstream RTU slave devices.
 - **Up to four concurrent TCP master connections** in TCP Server mode.
 - **Single-transaction RS-485 scheduling:** the half-duplex RTU bus is accessed one transaction at a time; ready requests from connected clients are serviced with a rotating starting slot.
 - TCP Transaction ID and the incoming TCP Unit ID are preserved in the response.
