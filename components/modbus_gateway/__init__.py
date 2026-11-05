@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Modbus RTU-TCP Gateway contributors.
+import json
+from pathlib import Path
+
 import esphome.codegen as cg
 from esphome.core import CORE
 import esphome.config_validation as cv
@@ -30,6 +33,11 @@ CONFIG_SCHEMA = cv.Schema({
 }).extend(cv.COMPONENT_SCHEMA)
 
 async def to_code(config):
+    # Use the component manifest as the single source of truth for the Web UI version.
+    manifest_path = Path(__file__).with_name("manifest.json")
+    with manifest_path.open("r", encoding="utf-8") as manifest_file:
+        component_version = json.load(manifest_file).get("version", "unknown")
+
     # ESPHome 2026.2+ selective Arduino compilation: explicitly enable
     # the Arduino libraries used by modbus_gateway.h.
     if CORE.is_esp32 and CORE.using_arduino:
@@ -39,6 +47,7 @@ async def to_code(config):
 
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
+    cg.add(var.set_version(component_version))
     cg.add(var.set_tcp_host(config[CONF_TCP_HOST]))
     cg.add(var.set_tcp_mode(config[CONF_TCP_MODE]))
     cg.add(var.set_tcp_port(config[CONF_TCP_PORT]))

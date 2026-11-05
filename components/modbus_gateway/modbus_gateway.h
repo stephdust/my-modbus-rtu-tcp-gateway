@@ -31,12 +31,18 @@ class ModbusGateway : public Component {
   void set_rx_gpio(int v) { rx_gpio_ = v; }
   void set_de_re_gpio(int v) { de_re_gpio_ = v; }
   void set_tcp_timeout(uint32_t v) { tcp_timeout_ms_ = v; }
+  void set_version(const std::string &v) { version_ = v; }
 
   void setup() override {
     load_settings_();
     setup_gpio_();
     begin_uart_();
     web_.on("/", HTTP_GET, [this]() { web_.send(200, "text/html; charset=utf-8", this->page_()); });
+    // Lightweight readiness endpoint used by the reboot page before redirecting.
+    web_.on("/health", HTTP_GET, [this]() {
+      web_.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      web_.send(200, "text/plain; charset=utf-8", "OK");
+    });
     // Serve embedded images independently so the main HTML remains small and reliable.
     web_.on("/img/logo.webp", HTTP_GET, [this]() { this->serve_image_(LOGO_IMG, "image/webp"); });
     web_.on("/img/modbus-tcp.jpg", HTTP_GET, [this]() { this->serve_image_(TCP_IMG, "image/jpeg"); });
@@ -80,6 +86,7 @@ class ModbusGateway : public Component {
 
  protected:
   std::string cfg_host_{"192.168.1.100"};
+  std::string version_{"unknown"};  // Loaded from components/modbus_gateway/manifest.json
   std::string tcp_mode_{"CLIENT"};
   uint16_t cfg_port_{502};
   bool rtu_listening_{true};
@@ -547,6 +554,8 @@ class ModbusGateway : public Component {
 
     if (de_re_gpio_ >= 0) digitalWrite(de_re_gpio_, HIGH);
     delayMicroseconds(100);
+    // Record the complete RTU request before transmitting it on the RS-485 bus.
+    add_log_("RTU TX", rtu.data(), rtu.size());
     Serial1.write(rtu.data(), rtu.size());
     Serial1.flush();
     delayMicroseconds(100);
@@ -611,9 +620,11 @@ class ModbusGateway : public Component {
     s.reserve(16000);
     s += R"HTML(<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Modbus Gateway</title>
 <style>
-*{box-sizing:border-box}html{background:#eef3f8}body{font:15px/1.5 Arial,Helvetica,sans-serif;background:#eef3f8;color:#17202a;margin:0;padding:24px 16px}main{max-width:920px;margin:0 auto}.brand{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;margin:0 auto 22px;padding:18px;background:#fff;border-radius:16px;box-shadow:0 3px 14px #0f172a12}.brand-logo{display:block;width:100%;max-width:920px;height:auto;max-height:none;object-fit:contain;margin:0 auto}.brand-title{font-size:25px;font-weight:700;letter-spacing:.2px;color:#12345a}.brand-sub{font-size:13px;color:#64748b;margin-top:2px}section{display:block;background:#fff;border:1px solid #e1e8f0;border-radius:14px;padding:20px;margin:16px 0;box-shadow:0 3px 12px rgba(15,23,42,.05)}h2{display:flex;align-items:center;gap:10px;font-size:19px;line-height:1.25;margin:0 0 18px;color:#12345a}.section-icon{display:block;width:54px;height:42px;flex:0 0 54px;object-fit:contain;vertical-align:middle;margin:0;border-radius:6px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 16px}label{display:block;font-size:13px;font-weight:600;color:#475569;margin:0 0 6px}input,select{display:block;width:100%;min-height:40px;box-sizing:border-box;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#17202a;font-size:15px}input:focus,select:focus{outline:2px solid #93c5fd;border-color:#2563eb}button{background:#1769aa;color:#fff;border:0;border-radius:8px;padding:11px 18px;font-size:14px;font-weight:600;cursor:pointer}button:hover{background:#125487}.muted{color:#64748b;font-size:13px}pre{white-space:pre-wrap;word-break:break-word;background:#101827;color:#dbeafe;padding:14px;border-radius:9px;max-height:360px;overflow:auto}.crc-byte{display:inline-block;border:2px solid #fbbf24;border-radius:50%;padding:1px 4px;margin:0 1px;color:#fde68a;font-weight:bold}.crc-ok{color:#86efac;font-weight:bold}.crc-bad{color:#fca5a5;font-weight:bold}#langBtn{float:right;margin:0 0 10px 10px}.apply-panel{display:flex;align-items:center;justify-content:space-between;gap:18px;background:#fff;border:1px solid #cbdbea;border-radius:14px;padding:16px 20px;margin:16px 0;box-shadow:0 3px 12px rgba(15,23,42,.05)}.apply-panel strong{display:block;color:#12345a;font-size:15px}.apply-panel .muted{margin-top:3px}.button-link{display:inline-block;background:#1769aa;color:#fff;border:0;border-radius:8px;padding:11px 18px;font-size:14px;font-weight:600;text-decoration:none;white-space:nowrap}.button-link:hover{background:#125487}@media(max-width:560px){.apply-panel{align-items:stretch;flex-direction:column;gap:10px}.apply-panel button,.apply-panel .button-link{width:100%;text-align:center}}#cfg{margin:0}@media(max-width:560px){body{padding:12px 9px}section{padding:14px}.brand{padding:12px}.brand-logo{width:100%;max-width:100%;max-height:none}.brand-title{font-size:20px}h2{font-size:17px}.section-icon{width:46px;height:36px;flex-basis:46px}}
+*{box-sizing:border-box}html{background:#eef3f8}body{font:15px/1.5 Arial,Helvetica,sans-serif;background:#eef3f8;color:#17202a;margin:0;padding:24px 16px}main{max-width:920px;margin:0 auto}.brand{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;margin:0 auto 22px;padding:18px;background:#fff;border-radius:16px;box-shadow:0 3px 14px #0f172a12}.brand-logo{display:block;width:100%;max-width:920px;height:auto;max-height:none;object-fit:contain;margin:0 auto}.brand-version{font-size:12px;font-weight:600;letter-spacing:.35px;color:#64748b;margin-top:-3px}.brand-title{font-size:25px;font-weight:700;letter-spacing:.2px;color:#12345a}.brand-sub{font-size:13px;color:#64748b;margin-top:2px}section{display:block;background:#fff;border:1px solid #e1e8f0;border-radius:14px;padding:20px;margin:16px 0;box-shadow:0 3px 12px rgba(15,23,42,.05)}h2{display:flex;align-items:center;gap:10px;font-size:19px;line-height:1.25;margin:0 0 18px;color:#12345a}.section-icon{display:block;width:54px;height:42px;flex:0 0 54px;object-fit:contain;vertical-align:middle;margin:0;border-radius:6px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 16px}label{display:block;font-size:13px;font-weight:600;color:#475569;margin:0 0 6px}input,select{display:block;width:100%;min-height:40px;box-sizing:border-box;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#17202a;font-size:15px}input:focus,select:focus{outline:2px solid #93c5fd;border-color:#2563eb}button{background:#1769aa;color:#fff;border:0;border-radius:8px;padding:11px 18px;font-size:14px;font-weight:600;cursor:pointer}button:hover{background:#125487}.muted{color:#64748b;font-size:13px}pre{white-space:pre-wrap;word-break:break-word;background:#101827;color:#dbeafe;padding:14px;border-radius:9px;max-height:360px;overflow:auto}.crc-byte{display:inline-block;border:2px solid #fbbf24;border-radius:50%;padding:1px 4px;margin:0 1px;color:#fde68a;font-weight:bold}.crc-ok{color:#86efac;font-weight:bold}.crc-bad{color:#fca5a5;font-weight:bold}#langBtn{float:right;margin:0 0 10px 10px}.apply-panel{display:flex;align-items:center;justify-content:space-between;gap:18px;background:#fff;border:1px solid #cbdbea;border-radius:14px;padding:16px 20px;margin:16px 0;box-shadow:0 3px 12px rgba(15,23,42,.05)}.apply-panel strong{display:block;color:#12345a;font-size:15px}.apply-panel .muted{margin-top:3px}.button-link{display:inline-block;background:#1769aa;color:#fff;border:0;border-radius:8px;padding:11px 18px;font-size:14px;font-weight:600;text-decoration:none;white-space:nowrap}.button-link:hover{background:#125487}@media(max-width:560px){.apply-panel{align-items:stretch;flex-direction:column;gap:10px}.apply-panel button,.apply-panel .button-link{width:100%;text-align:center}}#cfg{margin:0}@media(max-width:560px){body{padding:12px 9px}section{padding:14px}.brand{padding:12px}.brand-logo{width:100%;max-width:100%;max-height:none}.brand-title{font-size:20px}h2{font-size:17px}.section-icon{width:46px;height:36px;flex-basis:46px}}
 </style></head><body><main><button type="button" id="langBtn" onclick="toggleLanguage()" style="float:right">English</button><header class="brand">
-<img class="brand-logo" src="/img/logo.webp" alt="Logo passerelle Modbus"><div><div class="brand-title">Passerelle Modbus RTU ↔ TCP</div><div class="brand-sub" data-fr="Passerelle série ↔ réseau" data-en="Serial ↔ network gateway">Passerelle série ↔ réseau</div></div></header>
+<img class="brand-logo" src="/img/logo.webp" alt="Logo passerelle Modbus"><div class="brand-version">Version )HTML";
+    s += String(version_.c_str());
+    s += R"HTML(</div><div><div class="brand-title">Passerelle Modbus RTU ↔ TCP</div><div class="brand-sub" data-fr="Passerelle série ↔ réseau" data-en="Serial ↔ network gateway">Passerelle série ↔ réseau</div></div></header>
 <section><h2><img class="section-icon" src="/img/modbus-tcp.jpg" alt="">1. Modbus TCP</h2><div class="grid"><div><label>Mode</label><select name="mode" form="cfg">)HTML";
     s += "<option value=\"CLIENT\"" + String(tcp_mode_ == "CLIENT" ? " selected" : "") + ">Client TCP (RTU vers serveur)</option>";
     s += "<option value=\"SERVER\"" + String(tcp_mode_ == "SERVER" ? " selected" : "") + ">Serveur TCP (client TCP vers RTU)</option>";
@@ -647,7 +658,7 @@ class ModbusGateway : public Component {
 </div>
 <p class="muted">-1 = sélection automatique de la broche. Les paramètres sont enregistrés en mémoire. Toute modification des GPIO redémarre l’ESP32.</p>
 </section>
-<form id="cfg" method="POST" action="/save"><div class="apply-panel"><div><strong>Enregistrement global</strong><div class="muted">Les paramètres des sections 1, 2 et 3 seront enregistrés ensemble.</div></div><button type="submit">Enregistrer / appliquer</button></div></form>
+<form id="cfg" method="POST" action="/save"><input type="hidden" id="form_lang" name="lang" value="fr"><div class="apply-panel"><div><strong>Enregistrement global</strong><div class="muted">Les paramètres des sections 1, 2 et 3 seront enregistrés ensemble.</div></div><button type="submit">Enregistrer / appliquer</button></div></form>
 <section><h2><img class="section-icon" src="/img/frame-diagnostics.jpg" alt="">4. Debug des trames</h2>
 <p class="muted">RTU RX/TX et TCP TX/RX · rafraîchissement automatique toutes les 1,5 s</p>
 <p><button id="listenBtn" type="button" onclick="toggleListen()">Arrêter l’écoute RTU</button> <span id="listenState">Écoute RTU active</span></p>
@@ -691,7 +702,7 @@ function applyLanguage(){
   document.getElementById('langBtn').textContent=currentLanguage==='fr'?'English':'Français';
   updateListenState();
 }
-function toggleLanguage(){currentLanguage=currentLanguage==='fr'?'en':'fr';applyLanguage();}
+function toggleLanguage(){currentLanguage=currentLanguage==='fr'?'en':'fr';document.getElementById('form_lang').value=currentLanguage;applyLanguage();}
 function toggleRtuId(){const isServer=document.querySelector('select[name=mode]').value==='SERVER';document.getElementById('rtu_id_mode_field').style.display=isServer?'block':'none';document.getElementById('rtu_id_manual_field').style.display=(isServer&&document.querySelector('select[name=idmode]').value==='manual')?'block':'none';}document.querySelector('select[name=idmode]').addEventListener('change',toggleRtuId);document.querySelector('select[name=mode]').addEventListener('change',toggleRtuId);toggleRtuId();
 function crc16Modbus(bytes){let crc=0xFFFF;for(const b of bytes){crc^=b;for(let i=0;i<8;i++)crc=(crc&1)?((crc>>>1)^0xA001):(crc>>>1);}return crc&0xFFFF;}
 function toggleHostField(){const isServer=document.querySelector('select[name="mode"]').value==='SERVER';document.getElementById('host_field').style.display=isServer?'none':'block';document.getElementById('host_input').required=!isServer;}
@@ -788,6 +799,28 @@ updateListenState();refresh();setInterval(refresh,1500);
     web_.send(200,"text/plain; charset=utf-8",manual_result_);
   }
 
+  String reboot_page_(bool english) {
+    String page;
+    page.reserve(2600);
+    page += "<!doctype html><html lang=\"";
+    page += english ? "en" : "fr";
+    page += "\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">";
+    page += "<meta name=\"robots\" content=\"noindex,nofollow\"><title>";
+    page += english ? "Gateway restarting" : "Redémarrage de la passerelle";
+    page += "</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#eef3f8;color:#17202a;font:16px/1.5 Arial,Helvetica,sans-serif;padding:20px;box-sizing:border-box}.card{width:min(520px,100%);box-sizing:border-box;background:#fff;border:1px solid #dbe5ef;border-radius:16px;padding:30px 24px;text-align:center;box-shadow:0 5px 24px #0f172a14}h1{font-size:23px;color:#12345a;margin:0 0 12px}.seconds{font-size:48px;font-weight:700;color:#1769aa;margin:14px 0}.muted{color:#64748b;font-size:14px}#status{margin-top:18px;min-height:24px;color:#1769aa;font-weight:600}</style></head><body><main class=\"card\"><h1>";
+    page += english ? "Gateway is restarting" : "La passerelle redémarre";
+    page += "</h1><p>";
+    page += english ? "Your settings have been saved." : "Vos paramètres ont été enregistrés.";
+    page += "</p><div class=\"seconds\"><span id=\"seconds\">5</span></div><p class=\"muted\">";
+    page += english ? "The main page will open automatically when the gateway is ready." : "La page principale s’ouvrira automatiquement lorsque la passerelle sera prête.";
+    page += "</p><p id=\"status\" aria-live=\"polite\">";
+    page += english ? "Restarting in 5 seconds…" : "Redémarrage dans 5 secondes…";
+    page += "</p></main><script>const english=";
+    page += english ? "true" : "false";
+    page += ";const text=english?{waiting:'Waiting for the gateway to come back online…',checking:'Checking gateway…',online:'Gateway online. Returning to the main page…',retry:'Gateway not ready yet. Retrying…'}:{waiting:'En attente du retour de la passerelle…',checking:'Vérification de la passerelle…',online:'Passerelle accessible. Retour à la page principale…',retry:'La passerelle n’est pas encore prête. Nouvelle tentative…'};let remaining=5;const seconds=document.getElementById('seconds');const status=document.getElementById('status');const countdown=setInterval(()=>{remaining=Math.max(0,remaining-1);seconds.textContent=String(remaining);if(remaining===0){clearInterval(countdown);status.textContent=text.waiting;checkGateway();}},1000);let checking=false;async function checkGateway(){if(checking)return;checking=true;const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),1500);try{const response=await fetch('/health?ts='+Date.now(),{cache:'no-store',signal:controller.signal});if(response.ok){status.textContent=text.online;window.location.replace('/');return;}}catch(error){}finally{clearTimeout(timeout);checking=false;}status.textContent=text.retry;setTimeout(checkGateway,1000);}</script></body></html>";
+    return page;
+  }
+
   void save_config_() {
     int new_tx = web_.hasArg("tx") ? web_.arg("tx").toInt() : tx_gpio_;
     int new_rx = web_.hasArg("rx") ? web_.arg("rx").toInt() : rx_gpio_;
@@ -813,8 +846,15 @@ updateListenState();refresh();setInterval(refresh,1500);
     prefs_.putUInt("baud", cfg_baud_); prefs_.putUChar("dbits", cfg_data_bits_);
     prefs_.putString("parity", cfg_parity_.c_str()); prefs_.putUChar("sbits", cfg_stop_bits_);
     if (gpio_changed) {
-      web_.send(200, "text/html; charset=utf-8", "<meta charset='utf-8'>GPIO enregistrés. Redémarrage de l’ESP32…");
-      delay(500); ESP.restart(); return;
+      const bool reboot_page_english = web_.arg("lang") == "en";
+      // Send a complete HTML page before restarting. The short grace period
+      // lets the browser receive and render the countdown before Wi-Fi drops.
+      web_.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      web_.sendHeader("Connection", "close");
+      web_.send(200, "text/html; charset=utf-8", reboot_page_(reboot_page_english));
+      delay(1500);
+      ESP.restart();
+      return;
     }
     begin_uart_(); start_tcp_server_();
     web_.sendHeader("Location", "/"); web_.send(303, "text/plain", "Configuration enregistrée");
