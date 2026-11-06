@@ -1,3 +1,14 @@
+## 1.1.15
+
+- Reworked the Modbus TCP settings into two explicit vertical columns so conditional fields no longer leave one column sparse or push all remaining options to one side.
+- Balanced the two columns by grouping mode, server address, port and timeout behavior on the left; timeout, persistent connection and cache settings on the right.
+- Switched to a single stacked column on narrow/mobile screens.
+- No Modbus communication behavior or configuration semantics changed.
+
+## 1.1.14
+
+- Initial two-column Web UI layout adjustment.
+
 ## 1.1.13
 
 - Added a bilingual Web UI option for timeout behavior, shared by TCP Client and TCP Server modes.

@@ -183,4 +183,4 @@ GPLv3 license text.
 
 ## Latest release
 
-Current component version: **1.1.13**. The bilingual Web UI includes a shared Standard/Silent remote-timeout policy for both TCP modes, mode-aware response-cache controls and write-range-aware cache invalidation. See [CHANGELOG.md](CHANGELOG.md) for the release history, [docs/CLIENT_TCP_ASYNC.md](docs/CLIENT_TCP_ASYNC.md) for cooperative Client TCP handling, and [docs/CACHE.md](docs/CACHE.md) for cache behavior and data-freshness limits.
+Current component version: **1.1.15**. The bilingual Web UI includes a shared Standard/Silent remote-timeout policy for both TCP modes, mode-aware response-cache controls and write-range-aware cache invalidation. See [CHANGELOG.md](CHANGELOG.md) for the release history, [docs/CLIENT_TCP_ASYNC.md](docs/CLIENT_TCP_ASYNC.md) for cooperative Client TCP handling, and [docs/CACHE.md](docs/CACHE.md) for cache behavior and data-freshness limits.
