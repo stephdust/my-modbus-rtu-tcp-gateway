@@ -54,3 +54,40 @@ The configured server limit is four clients. Additional connections are rejected
 - Web UI frame export (`modbus-frame-capture.txt`).
 - Mode, TCP port, RTU serial format, Unit ID mode and GPIO values.
 - Board model/revision and a description of the RS-485 topology.
+
+### Missing `RTU TX` entries in TCP Server mode
+
+In TCP Server mode, the frame log records the complete RTU request (`RTU TX`)
+just before the ESP32 transmits it on the RS-485 bus. The expected transaction
+sequence is `TCP RX` → `RTU TX` → `RTU RX` → `TCP TX`. If `RTU TX` is present
+but `RTU RX` is missing, check the RS-485 wiring, slave address, serial format,
+DE/RE direction control, termination, and the slave response timeout.
+
+## TCP client connection diagnostics
+
+In **TCP Client (RTU to server)** mode, send a valid request from the RTU master and open **Frame diagnostics**. The rolling trace now records the TCP connection sequence as well as Modbus frames:
+
+- `TCP CONNECT` — target host and port being contacted.
+- `TCP INFO` — connection established and elapsed connection time.
+- `TCP ERROR` — Wi-Fi unavailable, connection refused/failed, socket write failure, response timeout, invalid MBAP header, or invalid response function.
+- `TCP TX` / `TCP RX` — Modbus TCP request and response data.
+
+The `TCP CONNECT` entry also reports the Arduino Wi-Fi status value and the local IP address for troubleshooting. The gateway does not abort solely because `WiFi.status()` reports a disconnected state; it attempts the socket connection and uses the result of `connect()` as the authoritative outcome. These events are also included in the `.txt` frame export. A typical connection failure appears after `RTU RX` as `TCP CONNECT`, followed by `TCP ERROR`. Check the displayed target address and port first; then check Wi-Fi connectivity, routing/firewall rules, and whether the remote server accepts connections from the gateway's IP address.
+
+## Persistent TCP Client sessions
+
+In TCP Client mode, the Web UI enables a persistent TCP connection by default. This avoids the TCP handshake on every RTU request. The diagnostics log shows `TCP CONNECT` when a socket is opened, `TCP REUSE` when an existing session is reused, and `TCP KEEP` after a successful response. If the server closes the session, the gateway opens a new connection for the next RTU request. Disable the persistent option in Section 1 if the remote server requires one connection per request.
+
+The `TCP CONNECT` diagnostics display the station IP reported by ESPHome's Wi-Fi component. If it displays `unavailable`, check the ESPHome Wi-Fi logs and DHCP lease.
+
+
+## Cache always reports `CACHE MISS`
+
+- Confirm the cache switch for the currently selected TCP mode is enabled. The Web UI intentionally shows only the switch for the selected mode; the other mode's value is hidden but preserved.
+- Check the configured TTL. An entry expires after the configured interval from the time the remote response was received; cache hits do not extend that interval.
+- Confirm that the repeated requests have the same direction, effective Unit ID, function code, starting address and quantity. A different range is a different cache key.
+- Read functions 01–04 are cacheable. Writes and read/write operations are not cached and successful non-read operations invalidate entries for the affected Unit ID.
+
+## `CRC ERROR` appears in the frame log
+
+The gateway intentionally drops RTU frames with an invalid CRC. In TCP Client mode, the bad RTU request is not sent to the remote TCP server. In TCP Server mode, the bad RTU response is not forwarded as response data and the TCP client receives gateway exception `0x0B`. Check baud rate, parity, stop bits, A+/B− polarity, shielding, termination and RS-485 direction control. Do not disable CRC validation to work around an electrical or serial-format problem.

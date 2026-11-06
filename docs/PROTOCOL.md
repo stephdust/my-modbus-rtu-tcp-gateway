@@ -9,11 +9,11 @@
 
 1. The gateway receives an RTU request on the UART/RS-485 interface.
 2. It checks the RTU CRC and extracts the RTU slave address and PDU.
-3. It opens a TCP connection to the configured Modbus TCP host and port.
+3. It uses the persistent TCP connection to the configured Modbus TCP host and port (opening or reconnecting the socket when needed).
 4. The RTU slave address is copied to the Modbus TCP Unit ID without applying the manual RTU ID override.
 5. The matching Modbus TCP response is checked and returned to the RTU master with a newly calculated RTU CRC.
 
-The current Client-mode implementation opens and closes a TCP socket per transaction. It does not keep one persistent outbound TCP socket open.
+The Client mode can keep one outbound TCP socket open between RTU transactions (enabled by default in the Web UI). When persistent mode is disabled, a connection is opened for each transaction. A disconnected persistent session is detected and re-established before a subsequent request.
 
 ### TCP Server — TCP to RTU
 
@@ -62,8 +62,17 @@ Other function codes are not covered by the current RTU request-length parser an
 
 ## Frame diagnostics
 
-- The rolling in-memory log retains the latest 32 events.
+- The rolling in-memory log retains the latest 64 events.
 - Direction labels include RTU RX, RTU TX, TCP RX, TCP TX and MANUAL RTU.
 - Times are `millis()` values (milliseconds since boot), not calendar timestamps.
 - The browser refreshes the log periodically and performs an RTU CRC check for displayed RTU frames.
-- The text export downloads the currently retained entries; it is not a permanent or complete packet capture.
+- The text export downloads the currently retained entries (up to 64); it is not a permanent or complete packet capture.
+
+## RTU CRC validation
+
+The gateway validates the Modbus RTU CRC before forwarding any received RTU frame or storing a response in the cache. Invalid RTU master requests in TCP Client mode are discarded and recorded as `CRC ERROR`. Invalid RTU slave responses in TCP Server mode are discarded, recorded as `CRC ERROR`, and reported to the TCP requester with gateway exception `0x0B` (Target Device Failed to Respond). Incomplete responses/timeouts are logged separately as `RTU ERROR`. Modbus TCP frames use the MBAP header and do not carry an RTU CRC.
+
+
+## TCP Client asynchronous response handling
+
+For normal RTU-originated requests in TCP Client mode, the gateway sends the TCP request and receives the MBAP header and response PDU incrementally from the ESPHome loop. It does not block the loop while waiting for the remote server response. The initial connection/reconnection and the physical RS-485 response transmission remain synchronous. See [Client TCP asynchronous handling](CLIENT_TCP_ASYNC.md).

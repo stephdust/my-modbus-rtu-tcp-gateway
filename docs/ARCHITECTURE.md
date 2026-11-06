@@ -36,9 +36,24 @@ The RTU address can be selected in the web interface:
 
 The RS-485 link is shared and half-duplex. Multiple TCP sessions can remain connected, but they must not drive the same RTU bus simultaneously. The gateway therefore processes one RTU request/response transaction at a time. In TCP Server mode, ready requests are serviced across the connected client slots using a rotating starting slot, and each response is sent to its originating TCP connection.
 
+## Latency diagnostics
+
+The Section 4 frame log adds a `TIMING` entry for each completed transaction. Values are measured with the ESP32 microsecond timer and are diagnostic measurements, not fixed performance guarantees. TCP Client mode reports connection setup (or reuse), request write, TCP response wait and the RTU response transmission/end-to-end processing time. TCP Server mode reports per-client queue wait, RTU transmission, RTU response wait, TCP response write and total gateway processing time. These measurements help identify whether the dominant delay is network connection setup, the remote Modbus server, the downstream RTU device or queueing behind another TCP client's transaction.
+
+The firmware retains the existing cooperative 1 ms polling waits and RS-485 direction-control guard intervals in this measurement release. These are intentionally not shortened before measurements from the target installation establish that doing so is safe for its Wi-Fi scheduling and RTU devices.
+
 ## Summary
 
 | Gateway mode | ESP32 TCP role | ESP32 RTU role | Request direction | Response direction |
 |---|---|---|---|---|
 | TCP Client | Client | Slave | RTU master → gateway → remote TCP server | Remote TCP server → gateway → RTU master |
 | TCP Server | Server | Master | TCP client (Modbus master) → gateway → RTU slave | RTU slave → gateway → originating TCP client |
+
+
+## Mode-specific response cache
+
+The gateway has two independent optional caches: RTU-to-TCP in Client mode and TCP-to-RTU in Server mode. The Web UI shows only the cache switch matching the currently selected TCP mode. The inactive mode's saved preference is retained when settings are applied. A shared TTL applies to both caches. Only valid Modbus read responses (functions 01–04) are cached; successful writes invalidate entries for the affected Unit ID. Invalid RTU CRC frames are never forwarded or cached. See [Cache behavior](CACHE.md).
+
+## Client TCP cooperative receive
+
+Normal RTU-originated Client TCP transactions receive the remote response incrementally through the ESPHome loop. This keeps the Web UI and other loop tasks responsive during remote-server processing. The initial TCP connect/reconnect and physical UART transmit completion remain synchronous; this implementation does not reduce the remote server's own response latency. See [Client TCP asynchronous handling](CLIENT_TCP_ASYNC.md).

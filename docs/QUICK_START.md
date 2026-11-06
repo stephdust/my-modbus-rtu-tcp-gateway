@@ -66,6 +66,7 @@ Select one operating mode:
 - Enter the remote server IP address and TCP port.
 - The RTU slave address is retained as the TCP Unit ID.
 - The RTU ID override controls are hidden in this mode.
+- **Persistent TCP connection** is enabled by default. The gateway keeps the socket open between RTU requests to reduce latency and reconnects after a detected disconnect. Disable this option only if the remote server requires a new connection for every request.
 
 ### TCP Server (TCP masters to RTU)
 
@@ -75,6 +76,11 @@ Select one operating mode:
 - The RTU ID selector is visible; choose Automatic or Manual.
 
 The TCP timeout is configurable from 1 to 30 seconds; the initial value is 3 seconds.
+
+### Response cache (mode-specific)
+
+The cache control follows the selected mode: **TCP Client** shows only the Client cache switch, while **TCP Server** shows only the Server cache switch. Switching modes changes the visible option immediately. The two settings are independent: saving one mode does not overwrite the other mode's hidden setting. The shared TTL is configurable from 50 to 10,000 ms (default 500 ms). Both caches are disabled by default. See [Cache behavior and configuration](CACHE.md) before enabling caching on a process where stale values could be unsafe.
+
 
 ## 6. Configure Section 2 — Modbus RTU
 
@@ -106,9 +112,9 @@ For the Waveshare ESP32-S3-RS485-CAN reference board, the project defaults are:
 
 ## 8. Save all settings
 
-The **Save / apply** button below Sections 1–3 saves all network, RTU and GPIO settings together. Settings are stored persistently in ESP32 NVS using Arduino Preferences and are loaded again at boot.
+The **Save / apply** button below Sections 1–3 saves all network, RTU, TCP persistence and GPIO settings together. Settings are stored persistently in ESP32 NVS using Arduino Preferences and are loaded again at boot.
 
-If a GPIO value changed, the node returns a short restart notice and reboots automatically.
+The **Restart gateway** button reboots the ESP32 without changing saved settings. It uses a five-second countdown page and automatically returns to the main Web UI when the gateway responds again. If a GPIO value changed, saving the configuration also triggers this restart flow automatically.
 
 ## 9. Use Section 4 — Frame diagnostics
 
@@ -118,8 +124,9 @@ The diagnostics page provides:
 - A manually entered RTU frame test (hexadecimal bytes including RTU address and CRC).
 - A display of the response to the manual test.
 - A live rolling log of RTU RX/TX and TCP RX/TX events.
+- `TIMING` entries with per-stage durations in microseconds. In TCP Client mode these report connection/reuse, TCP write, TCP response wait and end-to-end RTU response transmission. In TCP Server mode they report client queue wait, RS-485 transmit time, RTU response wait, TCP response write and total gateway processing time.
 - RTU CRC validation indicators in the browser.
-- **Export frame capture (.txt)**, which downloads `modbus-frame-capture.txt` with up to the 32 most recent logged entries.
+- **Export frame capture (.txt)**, which downloads `modbus-frame-capture.txt` with up to the 64 most recent logged entries, including timing diagnostics.
 
 Frame timestamps are milliseconds since ESP32 boot; they are not wall-clock timestamps.
 
@@ -131,3 +138,9 @@ Frame timestamps are milliseconds since ESP32 boot; they are not wall-clock time
 4. Test one known RTU slave before connecting multiple TCP masters.
 5. In TCP Server mode, connect up to four independent Modbus TCP clients and check that each receives its own response.
 6. Review the frame log and export it if you need a troubleshooting record.
+
+## 11. CRC and latency diagnostics
+
+Invalid RTU CRC frames are discarded before forwarding or cache storage. The Web trace reports `CRC ERROR` with the received and calculated CRC. In TCP Server mode, an invalid RTU response is not forwarded as data; the TCP requester receives gateway exception `0x0B`. Incomplete RTU responses and timeouts are logged as `RTU ERROR`.
+
+The diagnostics also report per-stage timing and receive-byte observations. These are software timestamps from the ESP32, not oscilloscope measurements. See [Latency diagnostics](LATENCY_DIAGNOSTICS.md).

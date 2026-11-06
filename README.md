@@ -10,19 +10,38 @@ A Wi-Fi Modbus gateway built with **ESPHome**, **ESP32-S3** and the **Arduino fr
 
 > **Reference hardware:** [Waveshare ESP32-S3-RS485-CAN](https://docs.waveshare.com/ESP32-S3-RS485-CAN). The project defaults match this board's RS-485 signals: TX GPIO17, RX GPIO18 and RS485 enable GPIO21. The project maintainer reports successful testing with this device, including four connected Modbus TCP clients.
 
+## Response cache
+
+The gateway provides two independent optional response caches, one for each operating mode:
+
+- **TCP Client mode (RTU → TCP):** repeated RTU read requests can be answered from the last valid Modbus TCP response.
+- **TCP Server mode (TCP → RTU):** repeated TCP read requests can be answered from the last valid RTU response without querying the RS-485 bus again.
+
+Both caches are disabled by default. Each can be enabled separately in the Web UI. A shared time-to-live (TTL) can be configured from 50 to 10,000 ms (default 500 ms). The cache has 64 entries and only stores valid read functions 01–04. Write and read/write operations are never cached; a successful non-read operation invalidates cached data for the affected RTU Unit ID. Cache hits do not extend the TTL. Cached values may therefore be stale by up to the configured TTL; keep the cache disabled when every read must return the freshest device value.
+
+See [Cache behavior and configuration](docs/CACHE.md) for details. The cache option displayed in Section 1 follows the selected TCP mode; the other mode's setting remains saved in NVS.
+
 ## Features
+
+- Per-transaction latency diagnostics in both TCP Client and TCP Server modes.
+- Non-blocking TCP response reception in normal TCP Client mode: the ESPHome loop keeps servicing the Web UI and other tasks while the remote Modbus TCP server prepares its response.
 
 - **Two operating modes**
   - **TCP Client / RTU Slave:** an external RTU master polls the ESP32; the gateway forwards each request to a configured remote Modbus TCP server.
-  - **TCP Server / RTU Master:** Modbus TCP Clients connect to the ESP32; the gateway forwards their requests to downstream RTU slave devices.
-- **Up to four concurrent TCP connections** in TCP Server mode.
+  - **TCP Server / RTU Master:** Modbus TCP masters connect to the ESP32; the gateway forwards their requests to downstream RTU slave devices.
+- **Up to four concurrent TCP master connections** in TCP Server mode.
 - **Single-transaction RS-485 scheduling:** the half-duplex RTU bus is accessed one transaction at a time; ready requests from connected clients are serviced with a rotating starting slot.
 - TCP Transaction ID and the incoming TCP Unit ID are preserved in the response.
 - **RTU address / Unit ID handling** is explicit and configurable (see [Protocol behaviour](docs/PROTOCOL.md)).
 - Web interface in **French and English**.
 - Settings are saved persistently in ESP32 NVS (Arduino `Preferences`). GPIO changes trigger an automatic restart so the UART can be reinitialized.
-- Frame diagnostics: live RTU/TCP frame log, RTU CRC status, manual RTU-frame test and text export of the latest 32 log entries.
+- Frame diagnostics: live RTU/TCP frame log, RTU CRC status, manual RTU-frame test and text export of the latest 64 log entries, including timing diagnostics.
+- **RTU CRC protection:** invalid RTU requests/responses are rejected before forwarding or caching; CRC failures are recorded in the diagnostics log. TCP Server mode returns gateway exception `0x0B` for an invalid downstream RTU response.
+- **Mode-aware cache controls:** Section 1 shows only the cache switch for the selected TCP mode. The inactive mode's enable setting is preserved when saving or switching modes.
 - Images are served on separate HTTP routes instead of being embedded in the HTML response, keeping the page response small.
+- **Persistent TCP Client connection** is enabled by default to avoid a new TCP handshake for every RTU request; disable it in Section 1 when a remote server requires one connection per request. The gateway reconnects when it detects a dropped session.
+- **Web UI reboot button** displays a five-second countdown and returns to the main page as soon as the gateway is online again.
+- TCP diagnostics report the actual IP address from ESPHome's Wi-Fi component, rather than relying only on the Arduino `WiFi.localIP()` accessor.
 
 ## System architecture
 
@@ -33,6 +52,18 @@ A Wi-Fi Modbus gateway built with **ESPHome**, **ESP32-S3** and the **Arduino fr
 ### Configuration page
 
 ![Web interface — TCP, RTU and GPIO settings](docs/assets/web-interface-settings.png)
+
+### Mode-specific response cache controls
+
+In TCP Client mode, only the Client cache switch is shown:
+
+![TCP Client mode cache setting](docs/assets/cache-mode-client.png)
+
+In TCP Server mode, only the Server cache switch is shown:
+
+![TCP Server mode cache setting](docs/assets/cache-mode-server.png)
+
+The inactive mode's setting remains saved when the configuration is applied.
 
 ### Frame diagnostics
 
@@ -84,6 +115,7 @@ See [Quick start and configuration](docs/QUICK_START.md) for full instructions.
 | TCP remote host (TCP Client mode) | 192.168.1.100 |
 | TCP port | 502 |
 | TCP timeout | 3 seconds |
+| Persistent TCP Client connection | Enabled by default (configurable in the web UI) |
 | RTU serial format | 9600 baud, 8 data bits, no parity, 1 stop bit (8N1) |
 | UART TX / RX | GPIO17 / GPIO18 |
 | RS-485 direction enable | GPIO21 |
@@ -107,6 +139,9 @@ Only TCP Server mode accepts inbound Modbus TCP masters. Up to four clients can 
 - [Waveshare ESP32-S3-RS485-CAN hardware and wiring](docs/HARDWARE_WAVESHARE.md)
 - [Protocol behaviour and Unit ID mapping](docs/PROTOCOL.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Byte-level latency diagnostics](docs/LATENCY_DIAGNOSTICS.md)
+- [Client TCP asynchronous handling](docs/CLIENT_TCP_ASYNC.md)
+- [Response cache configuration and behavior](docs/CACHE.md)
 
 ## Security notes
 
@@ -136,3 +171,8 @@ licenses and ownership; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 The software is provided **without warranty**; see Sections 15 and 16 of the
 GPLv3 license text.
+
+
+## Latest release
+
+Current component version: **1.1.11**. The Web UI now shows only the response-cache switch for the selected TCP mode while preserving the other mode's saved setting. See [CHANGELOG.md](CHANGELOG.md) for the release history, [docs/CLIENT_TCP_ASYNC.md](docs/CLIENT_TCP_ASYNC.md) for cooperative Client TCP handling, and [docs/CACHE.md](docs/CACHE.md) for cache behavior and data-freshness limits.
