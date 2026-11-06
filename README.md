@@ -17,7 +17,7 @@ The gateway provides two independent optional response caches, one for each oper
 - **TCP Client mode (RTU → TCP):** repeated RTU read requests can be answered from the last valid Modbus TCP response.
 - **TCP Server mode (TCP → RTU):** repeated TCP read requests can be answered from the last valid RTU response without querying the RS-485 bus again.
 
-Both caches are disabled by default. Each can be enabled separately in the Web UI. A shared time-to-live (TTL) can be configured from 50 to 10,000 ms (default 500 ms). The cache has 64 entries and only stores valid read functions 01–04. Write and read/write operations are never cached; a successful non-read operation invalidates cached data for the affected RTU Unit ID. Cache hits do not extend the TTL. Cached values may therefore be stale by up to the configured TTL; keep the cache disabled when every read must return the freshest device value.
+Both caches are disabled by default. Each can be enabled separately in the Web UI. A shared time-to-live (TTL) can be configured from 50 to 10,000 ms (default 500 ms). The cache has 64 entries and only stores valid read functions 01–04. Write and read/write operations are never cached; successful writes invalidate only overlapping cached ranges in the corresponding writable data space. Unknown or malformed write ranges trigger a conservative invalidation of all cached reads for that Unit ID and direction. Cache hits do not extend the TTL. Cached values may therefore be stale by up to the configured TTL; keep the cache disabled when every read must return the freshest device value.
 
 See [Cache behavior and configuration](docs/CACHE.md) for details. The cache option displayed in Section 1 follows the selected TCP mode; the other mode's setting remains saved in NVS.
 
@@ -37,6 +37,7 @@ See [Cache behavior and configuration](docs/CACHE.md) for details. The cache opt
 - Settings are saved persistently in ESP32 NVS (Arduino `Preferences`). GPIO changes trigger an automatic restart so the UART can be reinitialized.
 - Frame diagnostics: live RTU/TCP frame log, RTU CRC status, manual RTU-frame test and text export of the latest 64 log entries, including timing diagnostics.
 - **RTU CRC protection:** invalid RTU requests/responses are rejected before forwarding or caching; CRC failures are recorded in the diagnostics log. TCP Server mode returns gateway exception `0x0B` for an invalid downstream RTU response.
+- **Selectable remote-timeout policy:** one bilingual Web UI setting applies to both modes. `Standard` (default) returns a Modbus gateway exception when the remote endpoint times out; `Silent` sends no response upstream for that timeout only. The setting survives restart.
 - **Mode-aware cache controls:** Section 1 shows only the cache switch for the selected TCP mode. The inactive mode's enable setting is preserved when saving or switching modes.
 - Images are served on separate HTTP routes instead of being embedded in the HTML response, keeping the page response small.
 - **Persistent TCP Client connection** is enabled by default to avoid a new TCP handshake for every RTU request; disable it in Section 1 when a remote server requires one connection per request. The gateway reconnects when it detects a dropped session.
@@ -115,6 +116,7 @@ See [Quick start and configuration](docs/QUICK_START.md) for full instructions.
 | TCP remote host (TCP Client mode) | 192.168.1.100 |
 | TCP port | 502 |
 | TCP timeout | 3 seconds |
+| Remote timeout behavior | Standard (send gateway exception) |
 | Persistent TCP Client connection | Enabled by default (configurable in the web UI) |
 | RTU serial format | 9600 baud, 8 data bits, no parity, 1 stop bit (8N1) |
 | UART TX / RX | GPIO17 / GPIO18 |
@@ -137,7 +139,7 @@ Only TCP Server mode accepts inbound Modbus TCP masters. Up to four clients can 
 - [Quick start and configuration](docs/QUICK_START.md)
 - [System architecture](docs/ARCHITECTURE.md)
 - [Waveshare ESP32-S3-RS485-CAN hardware and wiring](docs/HARDWARE_WAVESHARE.md)
-- [Protocol behaviour and Unit ID mapping](docs/PROTOCOL.md)
+- [Protocol behaviour, timeout policy and Unit ID mapping](docs/PROTOCOL.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Byte-level latency diagnostics](docs/LATENCY_DIAGNOSTICS.md)
 - [Client TCP asynchronous handling](docs/CLIENT_TCP_ASYNC.md)
@@ -175,4 +177,4 @@ GPLv3 license text.
 
 ## Latest release
 
-Current component version: **1.1.11**. The Web UI now shows only the response-cache switch for the selected TCP mode while preserving the other mode's saved setting. See [CHANGELOG.md](CHANGELOG.md) for the release history, [docs/CLIENT_TCP_ASYNC.md](docs/CLIENT_TCP_ASYNC.md) for cooperative Client TCP handling, and [docs/CACHE.md](docs/CACHE.md) for cache behavior and data-freshness limits.
+Current component version: **1.1.13**. The bilingual Web UI includes a shared Standard/Silent remote-timeout policy for both TCP modes, mode-aware response-cache controls and write-range-aware cache invalidation. See [CHANGELOG.md](CHANGELOG.md) for the release history, [docs/CLIENT_TCP_ASYNC.md](docs/CLIENT_TCP_ASYNC.md) for cooperative Client TCP handling, and [docs/CACHE.md](docs/CACHE.md) for cache behavior and data-freshness limits.

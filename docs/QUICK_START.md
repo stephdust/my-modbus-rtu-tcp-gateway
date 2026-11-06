@@ -77,6 +77,15 @@ Select one operating mode:
 
 The TCP timeout is configurable from 1 to 30 seconds; the initial value is 3 seconds.
 
+### Remote timeout response policy
+
+The **Remote timeout behavior** selector is shared by both modes and defaults to **Standard**.
+
+- **Standard:** if the remote TCP server (Client mode) or downstream RTU slave (Server mode) does not provide a complete response before the configured timeout, the gateway returns exception `0x0B` to the upstream master/client.
+- **Silent:** for that remote-response timeout only, the gateway sends no RTU response in Client mode or no TCP response in Server mode. The upstream master/client then applies its own timeout. The TCP session in Server mode remains available for later requests.
+
+The setting is saved across restarts. It does not suppress CRC errors or other transport/protocol failures. In Client mode, for example, connection/protocol failures continue to use exception `0x0A`; a corrupt RTU request is discarded. In Server mode, an invalid RTU response is still rejected and reported with exception `0x0B`. See [Protocol behaviour](PROTOCOL.md#remote-timeout-policy-v113) for exact details.
+
 ### Response cache (mode-specific)
 
 The cache control follows the selected mode: **TCP Client** shows only the Client cache switch, while **TCP Server** shows only the Server cache switch. Switching modes changes the visible option immediately. The two settings are independent: saving one mode does not overwrite the other mode's hidden setting. The shared TTL is configurable from 50 to 10,000 ms (default 500 ms). Both caches are disabled by default. See [Cache behavior and configuration](CACHE.md) before enabling caching on a process where stale values could be unsafe.
@@ -141,6 +150,6 @@ Frame timestamps are milliseconds since ESP32 boot; they are not wall-clock time
 
 ## 11. CRC and latency diagnostics
 
-Invalid RTU CRC frames are discarded before forwarding or cache storage. The Web trace reports `CRC ERROR` with the received and calculated CRC. In TCP Server mode, an invalid RTU response is not forwarded as data; the TCP requester receives gateway exception `0x0B`. Incomplete RTU responses and timeouts are logged as `RTU ERROR`.
+Invalid RTU CRC frames are discarded before forwarding or cache storage. The Web trace reports `CRC ERROR` with the received and calculated CRC. In TCP Server mode, an invalid RTU response is not forwarded as data; the TCP requester receives gateway exception `0x0B`. Incomplete RTU responses and timeouts are logged as `RTU ERROR`. If Silent timeout behavior is selected, the log also records `TIMEOUT SILENT` and no upstream response is sent.
 
 The diagnostics also report per-stage timing and receive-byte observations. These are software timestamps from the ESP32, not oscilloscope measurements. See [Latency diagnostics](LATENCY_DIAGNOSTICS.md).

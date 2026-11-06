@@ -134,6 +134,7 @@ class ModbusGateway : public Component {
   int rx_gpio_{18};
   int de_re_gpio_{21};
   uint32_t tcp_timeout_ms_{3000};
+  bool silent_on_timeout_{false};  // false = standard Modbus gateway exception
   bool tcp_persistent_{true};
   bool cache_client_enabled_{false};
   bool cache_server_enabled_{false};
@@ -355,17 +356,102 @@ class ModbusGateway : public Component {
                "; Address=" + String(start_address) + "; Quantity=" + String(quantity) + ".");
   }
 
-  void cache_invalidate_unit_(uint8_t unit_id) {
-    size_t invalidated = 0;
-    for (auto &entry : response_cache_) {
-      if (entry.valid && entry.unit_id == unit_id) {
-        entry.valid = false;
-        invalidated++;
+  // Resolve the address range affected by a successful Modbus write.
+  // Return false for functions whose write range is unknown; callers then
+  // fall back to invalidating every cached read for this Unit ID and direction.
+  static bool cache_write_impact_(const std::vector<uint8_t> &pdu,
+                                  uint8_t &affected_read_function,
+                                  uint16_t &write_start, uint16_t &write_quantity) {
+    if (pdu.empty()) return false;
+
+    const uint8_t function = pdu[0];
+    affected_read_function = 0;
+    write_start = 0;
+    write_quantity = 0;
+
+    if (function == 0x05 || function == 0x06) {
+      if (pdu.size() != 5) return false;
+      write_start = (uint16_t(pdu[1]) << 8) | pdu[2];
+      write_quantity = 1;
+      affected_read_function = function == 0x05 ? 0x01 : 0x03;
+    } else if (function == 0x0F || function == 0x10) {
+      if (pdu.size() < 6) return false;
+      write_start = (uint16_t(pdu[1]) << 8) | pdu[2];
+      write_quantity = (uint16_t(pdu[3]) << 8) | pdu[4];
+      const uint8_t byte_count = pdu[5];
+      if (write_quantity == 0) return false;
+      if (function == 0x0F) {
+        if (write_quantity > 1968 || byte_count != (write_quantity + 7) / 8 ||
+            pdu.size() != size_t(6 + byte_count)) return false;
+        affected_read_function = 0x01;
+      } else {
+        if (write_quantity > 123 || byte_count != write_quantity * 2 ||
+            pdu.size() != size_t(6 + byte_count)) return false;
+        affected_read_function = 0x03;
       }
+    } else if (function == 0x16) {
+      if (pdu.size() != 7) return false;
+      write_start = (uint16_t(pdu[1]) << 8) | pdu[2];
+      write_quantity = 1;
+      affected_read_function = 0x03;
+    } else if (function == 0x17) {
+      // Read/Write Multiple Registers: the write range is at offsets 5 and 7.
+      if (pdu.size() < 10) return false;
+      write_start = (uint16_t(pdu[5]) << 8) | pdu[6];
+      write_quantity = (uint16_t(pdu[7]) << 8) | pdu[8];
+      const uint8_t byte_count = pdu[9];
+      if (write_quantity == 0 || write_quantity > 121 ||
+          byte_count != write_quantity * 2 || pdu.size() != size_t(10 + byte_count)) return false;
+      affected_read_function = 0x03;
+    } else {
+      return false;
     }
-    if (invalidated != 0) {
-      add_event_("CACHE INVALIDATE", String("Unit ID=") + String(unit_id) +
-                 "; Entries=" + String(invalidated) + " (successful non-read operation).");
+
+    // A range may end at address 65535, but must not wrap around 16-bit space.
+    return write_quantity != 0 &&
+           (uint32_t(write_start) + uint32_t(write_quantity)) <= 0x10000UL;
+  }
+
+  void cache_invalidate_after_write_(uint8_t direction, uint8_t unit_id,
+                                     const std::vector<uint8_t> &request_pdu) {
+    uint8_t affected_read_function = 0;
+    uint16_t write_start = 0;
+    uint16_t write_quantity = 0;
+    const bool targeted = cache_write_impact_(request_pdu, affected_read_function,
+                                               write_start, write_quantity);
+    const uint8_t write_function = request_pdu.empty() ? 0 : request_pdu[0];
+    const uint32_t write_end = uint32_t(write_start) + uint32_t(write_quantity);
+    size_t invalidated = 0;
+
+    for (auto &entry : response_cache_) {
+      if (!entry.valid || entry.direction != direction || entry.unit_id != unit_id) continue;
+
+      if (targeted) {
+        // A coil write affects cached Read Coils (FC 01), while register writes
+        // affect cached Read Holding Registers (FC 03). Discrete inputs and
+        // input registers are read-only address spaces and remain untouched.
+        if (entry.function_code != affected_read_function) continue;
+        const uint32_t cached_start = entry.start_address;
+        const uint32_t cached_end = cached_start + uint32_t(entry.quantity);
+        if (cached_start >= write_end || uint32_t(write_start) >= cached_end) continue;
+      }
+
+      entry.valid = false;
+      invalidated++;
+    }
+
+    if (targeted) {
+      const char *space = affected_read_function == 0x01 ? "Coils (read FC 01)" :
+                                                            "Holding registers (read FC 03)";
+      add_event_("CACHE INVALIDATE", String(direction == CACHE_DIRECTION_CLIENT ? "Client" : "Server") +
+                 " mode | Unit ID=" + String(unit_id) + "; Write FC=" + String(write_function) +
+                 "; Address=" + String(write_start) + "; Quantity=" + String(write_quantity) +
+                 "; Affected=" + String(space) + "; Entries=" + String(invalidated) + ".");
+    } else {
+      add_event_("CACHE INVALIDATE", String(direction == CACHE_DIRECTION_CLIENT ? "Client" : "Server") +
+                 " mode | Unit ID=" + String(unit_id) + "; Write FC=" + String(write_function) +
+                 "; Scope=all cached reads for this Unit ID (unknown or malformed write range)" +
+                 "; Entries=" + String(invalidated) + ".");
     }
   }
 
@@ -453,6 +539,7 @@ class ModbusGateway : public Component {
     tcp_mode_ = prefs_.getString("mode", tcp_mode_.c_str()).c_str();
     cfg_port_ = prefs_.getUShort("port", cfg_port_);
     tcp_timeout_ms_ = prefs_.getUInt("timeout", tcp_timeout_ms_);
+    silent_on_timeout_ = prefs_.getBool("silentto", silent_on_timeout_);
     tcp_persistent_ = prefs_.getBool("tcpkeep", tcp_persistent_);
     cache_client_enabled_ = prefs_.getBool("cachecli", cache_client_enabled_);
     cache_server_enabled_ = prefs_.getBool("cachesrv", cache_server_enabled_);
@@ -729,7 +816,7 @@ class ModbusGateway : public Component {
       if (cacheable_read && cache_client_enabled_) {
         cache_store_(CACHE_DIRECTION_CLIENT, unit_id, request_pdu, response_pdu);
       } else if (!cacheable_read) {
-        cache_invalidate_unit_(unit_id);
+        cache_invalidate_after_write_(CACHE_DIRECTION_CLIENT, unit_id, request_pdu);
       }
     }
 
@@ -748,7 +835,7 @@ class ModbusGateway : public Component {
     reset_client_transaction_();
   }
 
-  void fail_client_transaction_(const char *reason) {
+  void fail_client_transaction_(const char *reason, bool is_timeout = false) {
     const uint32_t now_us = micros();
     const bool response_wait_started = client_txn_.state != ClientTxnState::IDLE;
     const uint32_t response_us = response_wait_started ?
@@ -773,11 +860,19 @@ class ModbusGateway : public Component {
                " us; TCP response wait=" + String(response_us) + " us; TCP first byte=" +
                String(first_byte_us) + " us; TCP first-to-last=" + String(response_span_us) +
                " us; result=ERROR.");
-    std::vector<uint8_t> exception = {uint8_t(function | 0x80), 0x0A};
-    const uint32_t rtu_tx_us = send_rtu_(unit_id, exception);
-    add_event_("TIMING", String("CLIENT failed transaction total=") +
-               String(micros() - end_to_end_started_us) + " us; exception RTU TX=" +
-               String(rtu_tx_us) + " us.");
+    if (is_timeout && silent_on_timeout_) {
+      add_event_("TIMEOUT SILENT", String("Client mode | TCP response timeout; no RTU reply sent. Unit ID=") +
+                 String(unit_id) + "; Function=" + String(function) + ".");
+      add_event_("TIMING", String("CLIENT failed transaction total=") +
+                 String(micros() - end_to_end_started_us) + " us; result=silent timeout; no RTU TX.");
+    } else {
+      const uint8_t exception_code = is_timeout ? 0x0B : 0x0A;
+      std::vector<uint8_t> exception = {uint8_t(function | 0x80), exception_code};
+      const uint32_t rtu_tx_us = send_rtu_(unit_id, exception);
+      add_event_("TIMING", String("CLIENT failed transaction total=") +
+                 String(micros() - end_to_end_started_us) + " us; exception RTU TX=" +
+                 String(rtu_tx_us) + " us; exception=" + String(exception_code, HEX) + ".");
+    }
     reset_client_transaction_();
   }
 
@@ -831,7 +926,7 @@ class ModbusGateway : public Component {
       if (millis() - client_txn_.response_stage_started_ms >= tcp_timeout_ms_) {
         fail_client_transaction_(client_txn_.state == ClientTxnState::WAIT_MBAP ?
             "Timeout waiting for the Modbus TCP response header." :
-            "Timeout waiting for the Modbus TCP response PDU.");
+            "Timeout waiting for the Modbus TCP response PDU.", true);
         return;
       }
       // No delay/yield loop here: return to ESPHome and poll again on the next loop.
@@ -1292,7 +1387,7 @@ class ModbusGateway : public Component {
         if (cacheable_read && cache_server_enabled_) {
           cache_store_(CACHE_DIRECTION_SERVER, unit, pdu, response_pdu);
         } else if (!cacheable_read) {
-          cache_invalidate_unit_(unit);
+          cache_invalidate_after_write_(CACHE_DIRECTION_SERVER, unit, pdu);
         }
       }
       std::vector<uint8_t> out = {
@@ -1331,19 +1426,28 @@ class ModbusGateway : public Component {
         ESP_LOGW("modbus_gateway", "Discarded RTU response with invalid CRC (%s)", crc_detail.c_str());
       } else {
         add_event_("RTU ERROR", String("Server mode | No complete RTU response; Unit ID=") +
-                   String(unit) + "; Function=" + String(pdu[0]) + ". TCP gateway exception 0x0B returned.");
+                   String(unit) + "; Function=" + String(pdu[0]) +
+                   (silent_on_timeout_ ? ". Silent mode: no TCP response sent." :
+                                         ". TCP gateway exception 0x0B returned."));
       }
-      const uint8_t exception_pdu[] = {uint8_t(pdu[0] | 0x80), 0x0B};
-      const uint8_t out[] = {
-        uint8_t(tid >> 8), uint8_t(tid), 0, 0, 0, 3,
-        tcp_unit, exception_pdu[0], exception_pdu[1]
-      };
-      add_log_("TCP TX", out, sizeof(out));
-      const uint32_t tcp_write_started_us = micros();
-      const size_t written = slot.client.write(out, sizeof(out));
-      tcp_write_us = micros() - tcp_write_started_us;
-      if (written != sizeof(out)) {
-        add_event_("TIMING", String("SERVER queue=") + String(queue_wait_us) + " us; RTU TX=" +
+      const bool rtu_timeout = rlen < 5;
+      if (rtu_timeout && silent_on_timeout_) {
+        add_event_("TIMEOUT SILENT", String("Server mode | RTU slave timeout; no TCP reply sent. Unit ID=") +
+                   String(unit) + "; TCP Unit ID=" + String(tcp_unit) +
+                   "; Function=" + String(pdu[0]) + ".");
+        tcp_write_us = 0;
+      } else {
+        const uint8_t exception_pdu[] = {uint8_t(pdu[0] | 0x80), 0x0B};
+        const uint8_t out[] = {
+          uint8_t(tid >> 8), uint8_t(tid), 0, 0, 0, 3,
+          tcp_unit, exception_pdu[0], exception_pdu[1]
+        };
+        add_log_("TCP TX", out, sizeof(out));
+        const uint32_t tcp_write_started_us = micros();
+        const size_t written = slot.client.write(out, sizeof(out));
+        tcp_write_us = micros() - tcp_write_started_us;
+        if (written != sizeof(out)) {
+          add_event_("TIMING", String("SERVER queue=") + String(queue_wait_us) + " us; RTU TX=" +
                    String(rtu_tx_us) + " us; RTU wait=" + String(rtu_response_wait_us) +
                    " us; RTU first byte=" + String(rtu_first_byte_us) + " us; RTU first-to-last=" +
                    String(rtu_response_span_us) + " us; TCP request first-to-last=" +
@@ -1351,8 +1455,9 @@ class ModbusGateway : public Component {
                    " us; result=exception write error; total=" +
                    String(micros() - transaction_started_us) + " us.");
         ESP_LOGW("modbus_gateway", "Failed to send exception to TCP client %u", unsigned(client_index + 1));
-        reset_tcp_client_(slot);
-        return;
+          reset_tcp_client_(slot);
+          return;
+        }
       }
     }
 
@@ -1408,7 +1513,11 @@ class ModbusGateway : public Component {
     s += String(cfg_port_);
     s += R"HTML("</div><div><label>Timeout TCP (secondes)</label><input name="timeout" form="cfg" type="number" min="1" max="30" value=")HTML";
     s += String(tcp_timeout_ms_ / 1000);
-    s += R"HTML("></div><div id="persistent_tcp_field"><label class="check-label"><input type="checkbox" name="persistent" value="1" form="cfg")HTML";
+    s += R"HTML("></div><div><label>Comportement en cas de timeout distant</label><select name="timeout_behavior" form="cfg"><option value="standard")HTML";
+    if (!silent_on_timeout_) s += " selected";
+    s += R"HTML(>Standard : envoyer une exception Modbus</option><option value="silent")HTML";
+    if (silent_on_timeout_) s += " selected";
+    s += R"HTML(>Silencieux : ne pas répondre</option></select><p class="muted">S’applique aux deux modes TCP. En mode silencieux, seule l’absence de réponse distante déclenche le silence ; les erreurs de trame CRC restent signalées.</p></div><div id="persistent_tcp_field"><label class="check-label"><input type="checkbox" name="persistent" value="1" form="cfg")HTML";
     if (tcp_persistent_) s += " checked";
     s += R"HTML(> Connexion TCP persistante</label><p class="muted">Garde la connexion ouverte entre les requêtes RTU pour réduire la latence (mode Client TCP uniquement).</p></div>
 <div id="cache_client_field"><label class="check-label"><input type="checkbox" name="cache_client" value="1" form="cfg")HTML";
@@ -1462,7 +1571,7 @@ let currentLanguage='fr';
 const translations={
 'Mode':'Mode','Client TCP (RTU vers serveur)':'TCP client (RTU to server)','Serveur TCP (client TCP vers RTU)':'TCP server (TCP client to RTU)',
 'Connexion TCP persistante':'Persistent TCP connection','Garde la connexion ouverte entre les requêtes RTU pour réduire la latence (mode Client TCP uniquement).':'Keep the connection open between RTU requests to reduce latency (TCP Client mode only).','Redémarrer la passerelle':'Restart gateway','Redémarrer':'Restart','Redémarre l’ESP32 sans modifier les paramètres enregistrés.':'Restart the ESP32 without changing saved settings.',
-'Adresse IP du serveur Modbus TCP':'Modbus TCP server IP address','Port Modbus TCP':'Modbus TCP port','Timeout TCP (secondes)':'TCP timeout (seconds)',
+'Adresse IP du serveur Modbus TCP':'Modbus TCP server IP address','Port Modbus TCP':'Modbus TCP port','Timeout TCP (secondes)':'TCP timeout (seconds)','Comportement en cas de timeout distant':'Behavior when the remote device times out','Standard : envoyer une exception Modbus':'Standard: send a Modbus exception','Silencieux : ne pas répondre':'Silent: do not reply','S’applique aux deux modes TCP. En mode silencieux, seule l’absence de réponse distante déclenche le silence ; les erreurs de trame CRC restent signalées.':'Applies to both TCP modes. Silent mode is used only when the remote device does not respond; CRC frame errors are still reported.',
 'Activer le cache en mode Client TCP (RTU → TCP)':'Enable cache in TCP Client mode (RTU → TCP)','Activer le cache en mode Serveur TCP (TCP → RTU)':'Enable cache in TCP Server mode (TCP → RTU)','Durée de validité du cache (ms)':'Cache time-to-live (ms)','Le cache concerne uniquement les lectures Modbus (fonctions 01 à 04). L’option affichée correspond au mode TCP sélectionné ; le réglage de l’autre mode est conservé. Les écritures réussies invalident les réponses mémorisées pour l’Unit ID concerné. 64 entrées maximum.':'The cache stores only Modbus read requests (functions 01 to 04). Only the option for the selected TCP mode is shown; the other mode’s setting is preserved. Successful writes invalidate cached responses for the affected Unit ID. Maximum 64 entries.',
 'CACHE TROUVÉ':'CACHE HIT','CACHE ABSENT':'CACHE MISS','CACHE ENREGISTRÉ':'CACHE STORE','CACHE INVALIDÉ':'CACHE INVALIDATE','Mode Client':'Client mode','Mode Serveur':'Server mode','Fonction=':'Function=','Adresse=':'Address=','Quantité=':'Quantity=','Âge=':'Age=','Entrées=':'Entries=','Opération réussie hors lecture.':'Successful non-read operation.',
 'Baudrate':'Baud rate','Data bits':'Data bits','Parity':'Parity','Stop bits':'Stop bits',
@@ -1687,6 +1796,7 @@ updateListenState();refresh();setInterval(refresh,1500);
     if (web_.hasArg("host")) cfg_host_ = web_.arg("host").substring(0,63).c_str();
     if (web_.hasArg("port")) { int v=web_.arg("port").toInt(); if(v>=1 && v<=65535) cfg_port_=uint16_t(v); }
     if (web_.hasArg("timeout")) { int v=web_.arg("timeout").toInt(); if(v>=1 && v<=30) tcp_timeout_ms_=uint32_t(v)*1000; }
+    if (web_.hasArg("timeout_behavior")) silent_on_timeout_ = web_.arg("timeout_behavior") == "silent";
     if (web_.hasArg("baud")) cfg_baud_=web_.arg("baud").toInt();
     if (web_.hasArg("dbits")) cfg_data_bits_=uint8_t(web_.arg("dbits").toInt());
     if (web_.hasArg("parity")) cfg_parity_=web_.arg("parity").c_str();
@@ -1697,7 +1807,7 @@ updateListenState();refresh();setInterval(refresh,1500);
     manual_rtu_id_ = web_.arg("idmode") == "manual";
     if (web_.hasArg("rtuid")) { int v=web_.arg("rtuid").toInt(); if(v>=1 && v<=247) configured_rtu_id_=uint8_t(v); }
     prefs_.putString("host", cfg_host_.c_str()); prefs_.putString("mode", tcp_mode_.c_str()); prefs_.putUShort("port", cfg_port_);
-    prefs_.putUInt("timeout", tcp_timeout_ms_); prefs_.putInt("tx", tx_gpio_);
+    prefs_.putUInt("timeout", tcp_timeout_ms_); prefs_.putBool("silentto", silent_on_timeout_); prefs_.putInt("tx", tx_gpio_);
     prefs_.putInt("rx", rx_gpio_); prefs_.putInt("de", de_re_gpio_);
     prefs_.putBool("idmanual", manual_rtu_id_); prefs_.putUChar("rtuid", configured_rtu_id_);
     prefs_.putUInt("baud", cfg_baud_); prefs_.putUChar("dbits", cfg_data_bits_);

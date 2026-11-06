@@ -33,6 +33,12 @@
 - Check whether 120 Ω termination is needed at the physical bus end; avoid enabling termination on every node.
 - Make sure each RTU slave has a unique address and that the selected Unit ID rule is correct.
 
+## Remote device timeout: exception or no response
+
+Check **1. Modbus TCP → Remote timeout behavior** in the Web UI. The default is **Standard**, which returns gateway exception `0x0B` when the remote endpoint does not provide a complete response before the configured timeout. **Silent** sends no RTU response (TCP Client mode) or no TCP response (TCP Server mode) for that timeout; the upstream master/client must then use its own timeout.
+
+The frame log records the underlying `TCP ERROR` or `RTU ERROR`; in Silent mode it also records `TIMEOUT SILENT`. This option affects remote response timeouts only. It does not suppress invalid CRC, TCP connection failures or other protocol errors. Verify the remote server/slave, Unit ID, wiring and configured timeout before choosing Silent mode.
+
 ## RTU CRC errors
 
 - Check serial format and baud rate.
@@ -86,7 +92,7 @@ The `TCP CONNECT` diagnostics display the station IP reported by ESPHome's Wi-Fi
 - Confirm the cache switch for the currently selected TCP mode is enabled. The Web UI intentionally shows only the switch for the selected mode; the other mode's value is hidden but preserved.
 - Check the configured TTL. An entry expires after the configured interval from the time the remote response was received; cache hits do not extend that interval.
 - Confirm that the repeated requests have the same direction, effective Unit ID, function code, starting address and quantity. A different range is a different cache key.
-- Read functions 01–04 are cacheable. Writes and read/write operations are not cached and successful non-read operations invalidate entries for the affected Unit ID.
+- Read functions 01–04 are cacheable. Writes and read/write operations are not cached; successful standard writes invalidate only overlapping cached ranges in the corresponding writable data space (unknown/malformed operations use a conservative Unit-ID-wide fallback).
 
 ## `CRC ERROR` appears in the frame log
 

@@ -54,7 +54,12 @@ Only valid, structurally correct read responses for standard function codes are 
 
 The response function code and byte count are checked before a response is stored. Modbus exception responses and malformed responses are not cached.
 
-Write operations and read/write operations are never cached. After a successful non-read operation, cached entries for the affected RTU Unit ID are invalidated. This includes standard write functions such as `05`, `06`, `0F`, `10`, `16`, and `17`; other non-read functions are also treated conservatively as possible data changes.
+Write operations and read/write operations are never cached. After a successful standard write, invalidation is limited to cached entries whose address range overlaps the write range and whose read function addresses the corresponding writable data space:
+
+- `05` (Write Single Coil) and `0F` (Write Multiple Coils) invalidate overlapping `01` (Read Coils) entries.
+- `06` (Write Single Register), `10` (Write Multiple Registers), `16` (Mask Write Register), and `17` (Read/Write Multiple Registers) invalidate overlapping `03` (Read Holding Registers) entries. For `17`, the write start and quantity—not the read range—are used for invalidation.
+
+Non-overlapping ranges and read-only spaces (`02` Discrete Inputs and `04` Input Registers) are retained. An unknown or malformed non-read operation falls back to invalidating all cached reads for that Unit ID in the active communication direction. Modbus exception responses and failed writes do not invalidate entries.
 
 ## Diagnostics
 
@@ -63,7 +68,7 @@ The frame diagnostics and `.txt` export show cache events:
 - `CACHE MISS` – no valid matching entry was found; the request is sent to the remote device.
 - `CACHE STORE` – a valid read response was stored.
 - `CACHE HIT` – a matching, unexpired response was reused.
-- `CACHE INVALIDATE` – a successful non-read operation removed entries for that Unit ID.
+- `CACHE INVALIDATE` – a successful write removed overlapping entries only; the log identifies the write function, address, quantity, affected read function and number of entries removed. Unknown/malformed write ranges are logged as a conservative full-Unit-ID invalidation.
 
 On a cache hit, Client mode sends the cached PDU back over RTU. Server mode creates a fresh TCP MBAP header using the current request's Transaction ID and TCP Unit ID, and does not transmit anything on RS-485 for that request.
 

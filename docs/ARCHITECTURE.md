@@ -32,6 +32,15 @@ The RTU address can be selected in the web interface:
 - **Automatic:** use the incoming TCP Unit ID as the RTU slave address.
 - **Manual:** use the configured RTU ID (1–247), independently of the incoming TCP Unit ID. The TCP response retains the original Unit ID and Transaction ID.
 
+## Remote timeout handling
+
+A shared Web UI option controls what the gateway does when the remote endpoint does not provide a complete response before the configured timeout (1–30 seconds; default 3 seconds):
+
+- **Standard (default):** return a Modbus gateway exception `0x0B` to the upstream RTU master in TCP Client mode or to the requesting TCP client in TCP Server mode.
+- **Silent:** send no upstream response for that remote timeout. The upstream master/client is responsible for timing out.
+
+The selection is persistent across reboots and applies to both modes. It does not hide CRC failures, connection failures or other protocol errors. The frame diagnostics record silent timeouts as `TIMEOUT SILENT`. See [Protocol behaviour](PROTOCOL.md#remote-timeout-policy-v113).
+
 ## Why RTU transactions are sequential
 
 The RS-485 link is shared and half-duplex. Multiple TCP sessions can remain connected, but they must not drive the same RTU bus simultaneously. The gateway therefore processes one RTU request/response transaction at a time. In TCP Server mode, ready requests are serviced across the connected client slots using a rotating starting slot, and each response is sent to its originating TCP connection.
@@ -52,7 +61,7 @@ The firmware retains the existing cooperative 1 ms polling waits and RS-485 dire
 
 ## Mode-specific response cache
 
-The gateway has two independent optional caches: RTU-to-TCP in Client mode and TCP-to-RTU in Server mode. The Web UI shows only the cache switch matching the currently selected TCP mode. The inactive mode's saved preference is retained when settings are applied. A shared TTL applies to both caches. Only valid Modbus read responses (functions 01–04) are cached; successful writes invalidate entries for the affected Unit ID. Invalid RTU CRC frames are never forwarded or cached. See [Cache behavior](CACHE.md).
+The gateway has two independent optional caches: RTU-to-TCP in Client mode and TCP-to-RTU in Server mode. The Web UI shows only the cache switch matching the currently selected TCP mode. The inactive mode's saved preference is retained when settings are applied. A shared TTL applies to both caches. Only valid Modbus read responses (functions 01–04) are cached; successful writes invalidate overlapping cached ranges in the corresponding writable data space, with a conservative Unit-ID-wide fallback for unknown or malformed writes. Invalid RTU CRC frames are never forwarded or cached. See [Cache behavior](CACHE.md).
 
 ## Client TCP cooperative receive
 

@@ -26,6 +26,23 @@ The Client mode can keep one outbound TCP socket open between RTU transactions (
 
 The TCP sessions remain open between transactions. An incomplete Modbus TCP request that exceeds the configured timeout causes that client's slot/socket to be reset. A connection above the four-client limit is rejected.
 
+## Remote timeout policy (v1.1.13)
+
+The Web UI provides one **Remote timeout behavior** setting shared by both operating modes. The TCP timeout itself is configurable from 1 to 30 seconds (default 3 seconds). The policy is saved in ESP32 non-volatile preferences and defaults to `Standard` on a fresh installation.
+
+### Standard (default)
+
+- **TCP Client:** if the remote Modbus TCP server does not return a complete response before the response timeout, the gateway sends an RTU exception to the original RTU master. The exception function is `request function | 0x80`, with exception code `0x0B` (Gateway Target Device Failed to Respond).
+- **TCP Server:** if the downstream RTU slave does not return a complete response before the RTU response timeout, the gateway sends a Modbus TCP exception `0x0B` to the TCP client that issued the request. The original Transaction ID and TCP Unit ID are retained.
+
+### Silent
+
+For those same remote-response timeouts, the gateway sends **no RTU response** in TCP Client mode and **no TCP response** in TCP Server mode. The upstream RTU master or TCP client must therefore apply its own timeout. In Server mode the TCP session is not deliberately closed just because that request timed out.
+
+### Scope of the setting
+
+The Silent option suppresses only the response for a remote device/server that did not provide a complete response within the configured timeout. It does not suppress other errors. For example, Client-mode connection or protocol failures continue to use gateway exception `0x0A`; an invalid RTU CRC in Server mode is still rejected and reported with gateway exception `0x0B`. A corrupt RTU request received in Client mode is discarded before forwarding. The diagnostics log records silent timeouts as `TIMEOUT SILENT` alongside the relevant `TCP ERROR` or `RTU ERROR` event.
+
 ## Multi-client scheduling
 
 The four TCP sessions may remain connected at the same time. The RS-485 line is half-duplex and shared, so the gateway cannot execute four RTU transactions concurrently. It reads request data for each client slot, then processes one complete ready request at a time. The starting slot rotates after each completed transaction to reduce starvation when several clients are active.
@@ -70,7 +87,7 @@ Other function codes are not covered by the current RTU request-length parser an
 
 ## RTU CRC validation
 
-The gateway validates the Modbus RTU CRC before forwarding any received RTU frame or storing a response in the cache. Invalid RTU master requests in TCP Client mode are discarded and recorded as `CRC ERROR`. Invalid RTU slave responses in TCP Server mode are discarded, recorded as `CRC ERROR`, and reported to the TCP requester with gateway exception `0x0B` (Target Device Failed to Respond). Incomplete responses/timeouts are logged separately as `RTU ERROR`. Modbus TCP frames use the MBAP header and do not carry an RTU CRC.
+The gateway validates the Modbus RTU CRC before forwarding any received RTU frame or storing a response in the cache. Invalid RTU master requests in TCP Client mode are discarded and recorded as `CRC ERROR`. Invalid RTU slave responses in TCP Server mode are discarded, recorded as `CRC ERROR`, and reported to the TCP requester with gateway exception `0x0B` (Target Device Failed to Respond), regardless of the Silent timeout setting. Incomplete responses/timeouts are logged separately as `RTU ERROR`; when Silent is selected, the timeout also produces `TIMEOUT SILENT` and no upstream response. Modbus TCP frames use the MBAP header and do not carry an RTU CRC.
 
 
 ## TCP Client asynchronous response handling

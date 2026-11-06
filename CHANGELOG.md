@@ -1,3 +1,22 @@
+## 1.1.13
+
+- Added a bilingual Web UI option for timeout behavior, shared by TCP Client and TCP Server modes.
+- Default `Standard` behavior sends a Modbus gateway exception when the remote device does not respond before the configured timeout.
+- Optional `Silent` behavior sends no RTU response in Client mode or no TCP response in Server mode when the remote device times out; the upstream master/client then applies its own timeout.
+- The setting is persisted in ESP32 preferences and survives restart. The silent option applies only to a missing/incomplete remote response timeout; invalid RTU CRC frames and other transport/protocol errors are still handled and reported.
+- Client-mode remote TCP response timeouts use gateway exception `0x0B` in Standard mode; other client-side transport/protocol failures retain `0x0A`. In Server mode, an RTU slave timeout uses TCP gateway exception `0x0B` in Standard mode.
+- Updated the GitHub documentation for the timeout policy, diagnostics, cache invalidation rules and v1.1.13 defaults.
+
+## 1.1.12
+
+- Replaced broad Unit ID cache invalidation with write-range-aware invalidation for successful standard Modbus write operations.
+- Function `05` and `0F` writes invalidate only overlapping cached Read Coils (`01`) entries.
+- Functions `06`, `10`, `16`, and `17` invalidate only overlapping cached Read Holding Registers (`03`) entries.
+- Non-overlapping cached ranges and read-only spaces (Discrete Inputs `02` and Input Registers `04`) are retained.
+- Unknown or malformed non-read operations conservatively invalidate all cached reads for the affected Unit ID in the active communication direction.
+- Failed write operations and Modbus exception responses do not invalidate cache entries.
+- Cache invalidation diagnostics now include the write function, address range, affected read function and number of removed entries.
+
 ## 1.1.11
 
 - Made the Web UI response-cache controls mode-aware: TCP Client mode shows only the Client cache switch; TCP Server mode shows only the Server cache switch.

@@ -1,6 +1,6 @@
 # Byte-level latency diagnostics
 
-Component release: **1.1.11**
+Component release: **1.1.13**
 
 The frame diagnostics now expose receive timing in addition to the transaction-level timings.
 All values are reported in microseconds (`us`) in the Web trace and in the exported text capture.
