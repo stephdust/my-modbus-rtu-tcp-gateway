@@ -52,7 +52,13 @@ See [Cache behavior and configuration](docs/CACHE.md) for details. The cache opt
 
 ### Configuration page
 
-![Web interface — TCP, RTU and GPIO settings](docs/assets/web-interface-settings.png)
+![Web interface — TCP, RTU and GPIO settings](docs/assets/web-interface-settings-v1.1.13.png)
+
+### TCP Server mode and RTU Unit ID
+
+The RTU address selector is shown in TCP Server mode. This illustration shows the automatic mapping from the incoming TCP Unit ID to the RTU slave address.
+
+![TCP Server mode — RTU Unit ID selection](docs/assets/web-interface-server-mode-v1.1.13.png)
 
 ### Mode-specific response cache controls
 
@@ -68,7 +74,7 @@ The inactive mode's setting remains saved when the configuration is applied.
 
 ### Frame diagnostics
 
-![Web interface — frame diagnostics and text export](docs/assets/frame-diagnostics.png)
+![Web interface — frame diagnostics and text export](docs/assets/frame-diagnostics-v1.1.13.png)
 
 *These are rendered documentation previews built from the project's current page layout and image assets. Values and example frames are illustrative, not a live capture from a connected device.*
 
